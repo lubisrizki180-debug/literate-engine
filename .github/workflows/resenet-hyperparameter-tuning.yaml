@@ -1,0 +1,91 @@
+name: ResNet Hyperparameter Tuning
+
+on:
+  workflow_dispatch:
+
+jobs:
+  hyperparameter_tuning:
+    name: Hyperparameter Tuning
+    runs-on:
+      - machine
+      - gpu=T4
+      - cpu=4
+      - ram=16
+      - architecture=x64
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        learning_rate: [0.001, 0.0005]
+        batch_size: [32, 64]
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: |
+          uv venv .venv --python=3.10
+          source .venv/bin/activate
+          uv pip install -r requirements.txt
+          deactivate
+
+      - name: Train and Evaluate ResNet
+        env:
+          LEARNING_RATE: ${{ matrix.learning_rate }}
+          BATCH_SIZE: ${{ matrix.batch_size }}
+        run: |
+          source .venv/bin/activate
+          python train.py
+          deactivate
+
+      - name: Upload metrics artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: metrics-${{ matrix.learning_rate }}-${{ matrix.batch_size }}
+          path: metrics_*.json
+
+  compare_tuning:
+    needs: hyperparameter_tuning
+    name: Compare Tuning Performance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: |
+          uv venv .venv --python=3.10
+          source .venv/bin/activate
+          uv pip install -r requirements.txt
+          deactivate
+
+      - name: Download all metrics
+        uses: actions/download-artifact@v4
+        with:
+          path: metrics
+
+      - name: Compare Metrics
+        run: |
+          source .venv/bin/activate
+          python compare_metrics.py
+          deactivate
+
+      - name: Upload comparison results
+        uses: actions/upload-artifact@v4
+        with:
+          name: comparison-results
+          path: model_comparison.csv
